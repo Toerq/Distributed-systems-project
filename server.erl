@@ -62,7 +62,7 @@ server_loop(ClientList,StorePid, Locks) ->
 		    New_client_list = lists:keyreplace(Client, 1, ClientList, {Client, 0}),
 		    update_amounts(Locks, Client, self(), StorePid),
 		    io:format("Locks before: ~p~n", [Locks]),
-		    New_locks = remove_locks(Locks, Client),
+		    New_locks = release_locks(Locks, Client),
 		    io:format("Locks after: ~p~n", [New_locks]),
 		    StorePid ! {print, self()},
 		    server_loop(New_client_list,StorePid, New_locks)
@@ -178,41 +178,41 @@ abort_and_continue_server_loop(ClientList, StorePid, Locks, Client, Abort_reason
     io:format("ClientList ~p, StorePid ~p, Locks ~p, Client ~p", [ClientList, StorePid, Locks, Client]),
     New_client_list = lists:keyreplace(Client, 1, ClientList, {Client, 0}),    
     io:format("Locks before: ~p~n", [Locks]),
-    New_locks = remove_locks(Locks, Client),
+    New_locks = release_locks(Locks, Client),
     io:format("Locks after: ~p~n", [New_locks]),
     server_loop(New_client_list,StorePid, New_locks).
 
 
-remove_locks(Locks, Client) -> remove_locks_aux([a,b,c,d], Locks, Client).
-remove_locks_aux([], Locks, _Client) ->
+release_locks(Locks, Client) -> release_locks_aux([a,b,c,d], Locks, Client).
+release_locks_aux([], Locks, _Client) ->
     Locks;
-remove_locks_aux([H|T], Locks, Client) ->
+release_locks_aux([H|T], Locks, Client) ->
     case lists:keyfind(H, 1, Locks) of
 	{_, unlocked, _, _} ->
-	    remove_locks_aux(T, Locks, Client);
+	    release_locks_aux(T, Locks, Client);
 	{Variable, read_lock, Client_list, _} ->
 	    New_client_list = keydelete(Client_list, [], Client),
 	    case empty(New_client_list) of
 		true -> 
 		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, unlocked, [], 0}),
-		    remove_locks_aux(T, New_locks, Client);
+		    release_locks_aux(T, New_locks, Client);
 		false ->
 		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, read_lock, New_client_list, 0}),
-		    remove_locks_aux(T, New_locks, Client)
+		    release_locks_aux(T, New_locks, Client)
 		end;
 	{Variable, write_lock, [Lock_owner], _} ->
 	    case Client == Lock_owner of
 		true ->
 		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, unlocked, [], 0}),
-		    remove_locks_aux(T, New_locks, Client);
+		    release_locks_aux(T, New_locks, Client);
 		false ->
-		    remove_locks_aux(T, Locks, Client)
+		    release_locks_aux(T, Locks, Client)
 	    end;
 	Wat ->
 	    io:format("~nBug: ~p~n", [Wat])
     end.
 
-%remove_locks(Locks, Client) -> remove_locks_aux(Locks, Locks, Client).
+%release_locks(Locks, Client) -> release_locks_aux(Locks, Locks, Client).
 empty([]) -> true;
 empty(_) -> false.
 
