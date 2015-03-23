@@ -10,7 +10,11 @@
 
 -import(window, [set_title/2, insert_str/2, set_prompt/2]).
 
--export([start/1]).
+-export([start/1, start_connector/1,q/0]).
+
+%For debugging
+q() ->
+    client:start('server@samsung').
 
 start(Host) ->
     spawn(fun() -> handler(Host) end).
@@ -80,18 +84,31 @@ connected(Window, ServerPid) ->
 process(Window, ServerPid, Transaction) ->
     ServerPid ! {request, self()}, %% Send a request to server and wait for proceed message
     receive
-	{proceed, ServerPid} -> send(Window, ServerPid, Transaction); %% received green light send the transaction.
+	{proceed, ServerPid} -> 
+	    Transaction_length = list_length(Transaction, 0),
+	    send(Window, ServerPid, Transaction, Transaction_length); %% received green light send the transaction.
 	{close, ServerPid} -> exit(serverDied);
 	Other ->
 	    io:format("client active unexpected: ~p~n",[Other])
     end.
 
 %% - Sending the transaction and waiting for confirmation
-send(Window, ServerPid, []) ->
-    ServerPid ! {confirm, self()}, %% Once all the list (transaction) items sent, send confirmation
+send(Window, ServerPid, [], Transaction_length) ->
+    io:format("Commit attempt~n"),
+    ServerPid ! {confirm, self(), Transaction_length}, %% Once all the list (transaction) items sent, send confirmation
     receive
-	{abort, ServerPid} -> insert_str(Window, "Aborted... type run if you want to try again!\n"),
-		       connected(Window, ServerPid);
+	{abort, ServerPid} -> 
+	    insert_str(Window, "Aborted... type run if you want to try again!\n"),
+	    connected(Window, ServerPid);
+	{abort, ServerPid, package_loss, Actions_received, Transaction_length} -> 
+	    insert_str(Window, "Aborted due to package loss... type run if you want to try again!\n"),
+	    io:format("Received: ~p, Trans length: ~p~n", [Actions_received, Transaction_length]),
+	    connected(Window, ServerPid);
+	{abort, ServerPid, lock_acquire_failed, Variable} ->
+	    insert_str(Window, "Aborted due to not being able to retrieve lock... type run if you want to try again!\n"),
+	    io:format("Failed to aquire the lock on variable ~p~n", [Variable]),
+	    connected(Window, ServerPid);
+
 	{committed, ServerPid} -> insert_str(Window, "Transaction succeeded!\n"),
 			  connected(Window, ServerPid);
 	{'EXIT', Window, windowDestroyed} -> end_client(ServerPid);
@@ -100,14 +117,15 @@ send(Window, ServerPid, []) ->
 	Other ->
 	    io:format("client active unexpected: ~p~n",[Other])
     end;
-send(Window, ServerPid, [H|T]) -> 
-    sleep(3), 
+send(Window, ServerPid, [H|T], Transaction_length) -> 
+    sleep(2), 
+    io:format("in send, List: ~p~n", [[H|T]]),
     case loose(0) of
 	%% In order to handle losses, think about adding an extra field to the message sent
 	false -> ServerPid ! {action, self(), H}; 
-        true -> ok
+        true -> io:format("The action ~p was lost~n", [H])
     end,
-    send(Window, ServerPid, T).
+    send(Window, ServerPid, T, Transaction_length).
 %%%%%%%%%%%%%%%%%%%%%%% Active Window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -140,7 +158,8 @@ loose(Lossyness) ->
 	Val >= Lossyness -> false;
 	true -> true
     end.
-    
-	    
+
+list_length([], Counter) -> Counter;
+list_length([_|T], Counter) -> list_length(T, Counter + 1).
 
 		  
