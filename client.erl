@@ -1,3 +1,5 @@
+%% Authors: Christian Törnqvist and Zijian Qi
+
 %% - Client module
 %% - The client module creates a parallel process by spawning handler. 
 %% - The handler does the following: 
@@ -11,10 +13,6 @@
 -import(window, [set_title/2, insert_str/2, set_prompt/2]).
 
 -export([start/1, start_connector/1,q/0]).
-
-%For debugging
-q() ->
-    client:start('server@samsung').
 
 start(Host) ->
     spawn(fun() -> handler(Host) end).

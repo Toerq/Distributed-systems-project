@@ -1,3 +1,5 @@
+%% Authors: Christian Törnqvist and Zijian Qi
+
 %% - Server module
 %% - The server module creates a parallel registered process by spawning a process which 
 %% evaluates initialize(). 
@@ -104,7 +106,6 @@ store_loop(ServerPid, Database) ->
 			
 
 %%%%%%%%%%%%%%%%%%%%%%% HELP FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Note that the client is currently not allowed to have two transaction windows open.
 
 try_lock(Variable, Locks, Client, Amount, ClientList, StorePid, Action) ->
     case Action of
@@ -121,13 +122,13 @@ try_lock(Variable, Locks, Client, Amount, ClientList, StorePid, Action) ->
 
 acquire_read_lock(Variable, Locks, Client) ->
     case lists:keyfind(Variable, 1, Locks) of
-	{_, unlocked, _, Amount} ->
+	{_Variable, unlocked, _Lock_owners, Amount} ->
 	    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, read_lock, [Client], Amount}),
 	    New_locks;
-	{_, read_lock, Clients, Amount} ->
-	    case lists:keyfind(Client, 1, Clients) of %% To not have multiple entries of Client in the list Clients.
+	{_, read_lock, Lock_owners, Amount} ->
+	    case lists:keyfind(Client, 1, Lock_owners) of %% To not have multiple entries of Client in the list Lock_owners.
 		false -> 
-		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, read_lock, [Client|Clients], Amount}),
+		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, read_lock, [Client|Lock_owners], Amount}),
 		    New_locks;
 		true ->
 		    Locks %&client_already_owns_the_lock.
@@ -175,7 +176,7 @@ acquire_write_lock(Variable, Locks, Client, Amount) ->
 
 abort_and_continue_server_loop(ClientList, StorePid, Locks, Client, Abort_reason) ->
     Client ! Abort_reason,
-    io:format("ClientList ~p, StorePid ~p, Locks ~p, Client ~p", [ClientList, StorePid, Locks, Client]),
+    io:format("ClientList ~p, StorePid ~p, Locks ~p, Client ~p~n", [ClientList, StorePid, Locks, Client]),
     New_client_list = lists:keyreplace(Client, 1, ClientList, {Client, 0}),    
     io:format("Locks before: ~p~n", [Locks]),
     New_locks = release_locks(Locks, Client),
@@ -191,7 +192,8 @@ release_locks_aux([H|T], Locks, Client) ->
 	{_, unlocked, _, _} ->
 	    release_locks_aux(T, Locks, Client);
 	{Variable, read_lock, Client_list, _} ->
-	    New_client_list = keydelete(Client_list, [], Client),
+	    New_client_list = lists:delete(Client, Client_list),
+%	    New_client_list = keydelete(Client_list, [], Client),
 	    case empty(New_client_list) of
 		true -> 
 		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, unlocked, [], 0}),
@@ -208,24 +210,12 @@ release_locks_aux([H|T], Locks, Client) ->
 		false ->
 		    release_locks_aux(T, Locks, Client)
 	    end;
-	Wat ->
-	    io:format("~nBug: ~p~n", [Wat])
+	E ->
+	    io:format("~nError: ~p~n", [E])
     end.
 
-%release_locks(Locks, Client) -> release_locks_aux(Locks, Locks, Client).
 empty([]) -> true;
 empty(_) -> false.
-
-keydelete([], New_client_list, _) ->
-    New_client_list;
-keydelete([Client_head|Client_tail], New_client_list, Client) ->
-    case Client == Client_head of
-	true ->
-	    keydelete(Client_tail, New_client_list, Client);
-	false ->
-    	    keydelete(Client_tail, [Client_head|New_client_list], Client)
-    end.
-    
 
 update_amounts([], _, _, _) -> ok;
 update_amounts([Head_locks|Tail_locks], Client, ServerPid, StorePid) ->
@@ -242,36 +232,6 @@ update_amounts([Head_locks|Tail_locks], Client, ServerPid, StorePid) ->
 	    update_amounts(Tail_locks, Client, ServerPid, StorePid)
     end.
 %%%%%%%%%%%%%%%%%%%%%%% HELP FUNCTIONS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-  
-
-%How locks work in 2pl:		
-%An existing write-lock on a database object blocks an intended write upon the same object 
-%(already requested/issued) by another transaction by blocking a respective write-lock 
-%from being acquired by the other transaction. The second write-lock will be acquired 
-%and the requested write of the object will take place (materialize) after the existing write-lock is released.
-%
-%A write-lock blocks an intended (already requested/issued) read by another transaction by blocking the respective read-lock .
-%
-%A read-lock blocks an intended write by another transaction by blocking the respective write-lock.
-%
-%A read-lock does not block an intended read by another transaction. The respective read-lock for 
-%the intended read is acquired (shared with the previous read) immediately after the intended read
-% is requested, and then the intended read itself takes place.
-
-		    
-
-    
-		    
-%    case Locks#locks.Variable of
-%	unlocked ->
-%	    asd;
-%	locked ->
-%	    pwd.
-	    
-
-	    
-
 
 %% - Low level function to handle lists
 add_client(C,T) -> [{C,0}|T].
