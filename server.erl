@@ -34,8 +34,6 @@ initialize() ->
 %%%%%%%%%%%%%%%%%%%%%%% ACTIVE SERVER %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% - The server maintains a list of all connected clients and a store holding
 %% the values of the global variable a, b, c and d 
-
-
 server_loop(ClientList,StorePid, Locks) ->
     io:format("in server_loop~n"),
     receive
@@ -97,7 +95,6 @@ store_loop(ServerPid, Database) ->
 	    io:format("Database status:~n~p.~n",[Database]),
 	    store_loop(ServerPid,Database);
 	{update, ServerPid, Variable, Amount} ->
-	    % Do we increment or replace the amount when doing write?
 	    New_database = lists:keyreplace(Variable, 1, Database, {Variable, Amount}),
 	    store_loop(ServerPid,New_database)
     end.
@@ -193,7 +190,6 @@ release_locks_aux([H|T], Locks, Client) ->
 	    release_locks_aux(T, Locks, Client);
 	{Variable, read_lock, Client_list, _} ->
 	    New_client_list = lists:delete(Client, Client_list),
-%	    New_client_list = keydelete(Client_list, [], Client),
 	    case empty(New_client_list) of
 		true -> 
 		    New_locks = lists:keyreplace(Variable, 1, Locks, {Variable, unlocked, [], 0}),
